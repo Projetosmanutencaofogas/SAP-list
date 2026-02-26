@@ -98,6 +98,7 @@ export default function App() {
   const [tableData, setTableData] = useState<any[]>([]);
   
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [showCopyConfig, setShowCopyConfig] = useState(false);
   const [copiedCount, setCopiedCount] = useState(0);
 
@@ -168,6 +169,44 @@ export default function App() {
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+    };
+
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+
+      const droppedFiles = e.dataTransfer?.files;
+      if (droppedFiles && droppedFiles.length > 0) {
+        const newFiles = Array.from(droppedFiles);
+        setFiles(prev => [...prev, ...newFiles]);
+        setSuccessMsg(`✅ ${newFiles.length} arquivo(s) adicionado(s)!`);
+        setTimeout(() => setSuccessMsg(''), 3000);
+      }
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('dragleave', handleDragLeave);
+    window.addEventListener('drop', handleDrop);
+
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('dragleave', handleDragLeave);
+      window.removeEventListener('drop', handleDrop);
+    };
   }, []);
 
   useEffect(() => {
@@ -652,7 +691,32 @@ export default function App() {
   const nextBatchEnd = Math.min(copiedCount + (Number(config.loteTamanho) || 10), tableData.length);
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-blue-100">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-blue-100 relative">
+      <AnimatePresence>
+        {isDragging && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] bg-blue-600/90 backdrop-blur-sm flex flex-col items-center justify-center text-white p-10 pointer-events-none"
+          >
+            <motion.div 
+              initial={{ scale: 0.8, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="flex flex-col items-center gap-6 text-center"
+            >
+              <div className="w-24 h-24 bg-white/20 rounded-3xl flex items-center justify-center border-4 border-dashed border-white/40 animate-pulse">
+                <Upload size={48} />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-4xl font-black uppercase tracking-tighter">Solte para Analisar</h2>
+                <p className="text-xl font-medium text-blue-100">Arraste fotos, PDFs ou prints para extração automática</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="max-w-[1600px] mx-auto p-4 md:p-6 lg:p-8 space-y-6">
         
         {/* Header Section */}
