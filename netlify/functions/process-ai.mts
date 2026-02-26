@@ -49,14 +49,6 @@ export default async (req: Request, _context: Context) => {
     });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return new Response(
-      JSON.stringify({ error: "GEMINI_API_KEY não configurada no servidor." }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
-  }
-
   try {
     const body = await req.json();
     const { text, files } = body as {
@@ -88,11 +80,11 @@ export default async (req: Request, _context: Context) => {
       );
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({});
 
     const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-05-20",
-      contents: [{ parts }],
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts }],
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
