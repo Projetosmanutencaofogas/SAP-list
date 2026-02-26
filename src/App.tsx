@@ -64,7 +64,26 @@ const COLUMNS_OS = [
   { id: 'ptoDescarga', label: 'Pto.descarga' }
 ];
 
-type TabType = 'sc' | 'os' | 'email';
+const COLUMNS_PC = [
+  { id: 'sta', label: 'S..' },
+  { id: 'itemNum', label: 'Itm' },
+  { id: 'c', label: 'C' },
+  { id: 'i', label: 'I' },
+  { id: 'material', label: 'Material' },
+  { id: 'textoBreve', label: 'Texto breve' },
+  { id: 'qtdPedido', label: 'Qtd.pedido' },
+  { id: 'um', label: 'UM' },
+  { id: 't', label: 'T' },
+  { id: 'dtRemessa', label: 'Dt.remessa' },
+  { id: 'precoLiq', label: 'Preço líq.' },
+  { id: 'moeda', label: 'Moeda' },
+  { id: 'por', label: 'por' },
+  { id: 'unidade', label: 'U..' },
+  { id: 'grpMercads', label: 'GrpMercads.' },
+  { id: 'centro', label: 'Cen.' }
+];
+
+type TabType = 'sc' | 'os' | 'pc' | 'email';
 
 // --- Components ---
 
@@ -114,6 +133,9 @@ export default function App() {
   const [copyColumnsOS, setCopyColumnsOS] = useState(
     COLUMNS_OS.reduce((acc, col) => ({ ...acc, [col.id]: col.id !== 'itemNum' && col.id !== 'tItem' }), {} as Record<string, boolean>)
   );
+  const [copyColumnsPC, setCopyColumnsPC] = useState(
+    COLUMNS_PC.reduce((acc, col) => ({ ...acc, [col.id]: col.id !== 'sta' && col.id !== 'itemNum' }), {} as Record<string, boolean>)
+  );
 
   useEffect(() => {
     const data = new Date();
@@ -125,7 +147,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === 'sc' || activeTab === 'os') {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const pastedFiles: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file') {
+          const file = items[i].getAsFile();
+          if (file) pastedFiles.push(file);
+        }
+      }
+
+      if (pastedFiles.length > 0) {
+        setFiles(prev => [...prev, ...pastedFiles]);
+        setSuccessMsg(`✅ ${pastedFiles.length} item(s) colado(s) do clipboard!`);
+        setTimeout(() => setSuccessMsg(''), 3000);
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'sc' || activeTab === 'os' || activeTab === 'pc') {
       buildTableData(rawAiData, activeTab);
       setCopiedCount(0);
     }
@@ -184,6 +230,8 @@ export default function App() {
       setCopyColumnsSC(prev => ({ ...prev, [colId]: !prev[colId] }));
     } else if (activeTab === 'os') {
       setCopyColumnsOS(prev => ({ ...prev, [colId]: !prev[colId] }));
+    } else if (activeTab === 'pc') {
+      setCopyColumnsPC(prev => ({ ...prev, [colId]: !prev[colId] }));
     }
   };
 
@@ -195,17 +243,20 @@ export default function App() {
 
     if (tab === 'sc') {
       const generatedTable = items.map((item, idx) => {
-        const isPar = (item.unidade || '').toUpperCase() === 'PAR';
+        const unit = (item.unidade || 'UN').toUpperCase();
+        const qty = item.quantidade && item.quantidade > 0 ? item.quantidade.toString() : '1';
+        const price = (item.preco && item.preco !== '0,00') ? item.preco : (config.preco || '1,00');
+        
         return {
           sta: '🔴',
           itemNum: ((idx + 1) * 10).toString(),
           c: config.codigoC || '',
           i: '',
-          material: isPar ? `${config.materialBase}(PAR)` : `${config.materialBase}(UN)`,
+          material: config.materialBase || '',
           textoBreve: item.descricao || '',
-          quantidade: item.quantidade !== undefined ? item.quantidade.toString() : '',
-          um: (item.unidade || '').toUpperCase(),
-          preco: config.preco || '',
+          quantidade: qty,
+          um: unit,
+          preco: price,
           t: 'D',
           dtRemessa: config.dtRemessa || '',
           grpMercads: '',
@@ -234,6 +285,32 @@ export default function App() {
           ctgSuprimento: '',
           recebedor: config.requisitante || '',
           ptoDescarga: ''
+        };
+      });
+      setTableData(generatedTable);
+    } else if (tab === 'pc') {
+      const generatedTable = items.map((item, idx) => {
+        const unit = (item.unidade || 'UN').toUpperCase();
+        const qty = item.quantidade && item.quantidade > 0 ? item.quantidade.toString() : '1';
+        const price = (item.preco && item.preco !== '0,00') ? item.preco : (config.preco || '1,00');
+
+        return {
+          sta: '',
+          itemNum: ((idx + 1) * 10).toString(),
+          c: config.codigoC || '',
+          i: '',
+          material: config.materialBase || '',
+          textoBreve: `Sv. ${item.descricao || ''}`,
+          qtdPedido: qty,
+          um: unit,
+          t: 'D',
+          dtRemessa: config.dtRemessa || '',
+          precoLiq: price,
+          moeda: 'BRL',
+          por: '1',
+          unidade: unit,
+          grpMercads: '',
+          centro: config.centro || '',
         };
       });
       setTableData(generatedTable);
@@ -279,13 +356,24 @@ export default function App() {
         contents: [{ parts }],
         config: {
           systemInstruction: `Você é um assistente de Backoffice ERP (SAP).
-          Analise o texto e/ou imagens fornecidos e extraia a lista de itens.
-          MANTENHA A DESCRIÇÃO PRINCIPAL (descricao) clara em MAIÚSCULAS.
-          COLOQUE OS DETALHES TÉCNICOS ADICIONAIS na propriedade 'detalhes'.
+          Analise o texto e/ou imagens fornecidos e extraia a lista COMPLETA de itens, incluindo equipamentos, serviços, taxas, fretes e qualquer outro item cobrável.
+          
+          REGRAS DE EXTRAÇÃO:
+          1. MANTENHA A DESCRIÇÃO PRINCIPAL (descricao) clara em MAIÚSCULAS.
+          2. COLOQUE OS DETALHES TÉCNICOS ADICIONAIS na propriedade 'detalhes'.
+          3. NÃO IGNORE NENHUMA SEÇÃO. Se houver tabelas separadas para "Equipamentos" e "Taxas/Serviços", extraia itens de AMBAS.
+          4. QUANTIDADE: Se a quantidade for 0 ou não informada, use 1.
+          
           REGRAS PARA UNIDADE DE MEDIDA (UM):
-          1. Se o documento original (texto ou imagem) já indicar a unidade (ex: "PC", "peças", "UN", "unidades", "PAR", "pares", "M", "metros", "LT", "litros"), VOCÊ DEVE OBEDECER E USAR A UNIDADE INFORMADA.
-          2. Formate a saída estritamente com as siglas oficiais do SAP: 'PC' (Peça), 'UN' (Unidade), 'PAR' (Par), 'M' (Metro), 'CX' (Caixa), 'KG' (Quilo), 'LT' (Litro).
-          3. Use a dedução apenas se o item não possuir absolutamente NENHUMA indicação de unidade.`,
+          1. Se o documento indicar a unidade (ex: "PC", "peças", "UN", "unidades", "PAR", "pares", "M", "metros", "LT", "litros"), USE A UNIDADE INFORMADA.
+          2. Formate a saída com siglas SAP: 'PC', 'UN', 'PAR', 'M', 'CX', 'KG', 'LT'.
+          3. Para serviços ou taxas sem unidade clara, use 'UN'.
+          
+          REGRAS PARA PREÇO:
+          1. Extraia o PREÇO UNITÁRIO (Unitário R$) e o PREÇO TOTAL (Total R$) de cada item.
+          2. Formate como string com vírgula para decimais (ex: "160,00").
+          3. Se o PREÇO UNITÁRIO for 0 ou não informado, mas houver um PREÇO TOTAL, calcule: Unitário = Total / Quantidade.
+          4. O objetivo é que o PREÇO UNITÁRIO nunca seja "0,00" se houver um valor total na linha ou no documento.`,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -296,8 +384,9 @@ export default function App() {
                   type: Type.OBJECT,
                   properties: {
                     descricao: { type: Type.STRING, description: "Descrição principal/nome em MAIÚSCULAS." },
-                    quantidade: { type: Type.NUMBER },
+                    quantidade: { type: Type.NUMBER, description: "Quantidade (mínimo 1)." },
                     unidade: { type: Type.STRING, description: "Unidade de medida (ex: UN, PAR, PC, M, CX)." },
+                    preco: { type: Type.STRING, description: "Preço unitário calculado ou extraído (ex: '10,50')." },
                     detalhes: { type: Type.STRING, description: "Especificações extras, normas, referências ou tamanhos." }
                   },
                   required: ["descricao", "quantidade", "unidade"]
@@ -382,6 +471,27 @@ export default function App() {
         rowData.push(copyColumnsOS.ptoDescarga ? String(row.ptoDescarga || '').trim() : '');
         return rowData.join('\t');
       });
+    } else if (activeTab === 'pc') {
+      tsvData = currentBatch.map(row => {
+        const rowData = [];
+        if (copyColumnsPC.sta) rowData.push(String(row.sta || '').trim());
+        if (copyColumnsPC.itemNum) rowData.push(String(row.itemNum || '').trim());
+        rowData.push(copyColumnsPC.c ? String(row.c || '').trim() : '');
+        rowData.push(copyColumnsPC.i ? String(row.i || '').trim() : '');
+        rowData.push(copyColumnsPC.material ? String(row.material || '').trim() : '');
+        rowData.push(copyColumnsPC.textoBreve ? String(row.textoBreve || '').trim() : '');
+        rowData.push(copyColumnsPC.qtdPedido ? String(row.qtdPedido || '').trim() : '');
+        rowData.push(copyColumnsPC.um ? String(row.um || '').trim() : '');
+        rowData.push(copyColumnsPC.t ? String(row.t || '').trim() : '');
+        rowData.push(copyColumnsPC.dtRemessa ? String(row.dtRemessa || '').trim() : '');
+        rowData.push(copyColumnsPC.precoLiq ? String(row.precoLiq || '').trim() : '');
+        rowData.push(copyColumnsPC.moeda ? String(row.moeda || '').trim() : '');
+        rowData.push(copyColumnsPC.por ? String(row.por || '').trim() : '');
+        rowData.push(copyColumnsPC.unidade ? String(row.unidade || '').trim() : '');
+        rowData.push(copyColumnsPC.grpMercads ? String(row.grpMercads || '').trim() : '');
+        rowData.push(copyColumnsPC.centro ? String(row.centro || '').trim() : '');
+        return rowData.join('\t');
+      });
     }
 
     const finalString = tsvData.join('\n');
@@ -444,6 +554,27 @@ export default function App() {
         rowData.push(copyColumnsOS.ctgSuprimento ? String(row.ctgSuprimento || '').trim() : '');
         rowData.push(copyColumnsOS.recebedor ? String(row.recebedor || '').trim() : '');
         rowData.push(copyColumnsOS.ptoDescarga ? String(row.ptoDescarga || '').trim() : '');
+        return rowData.join('\t');
+      });
+    } else if (activeTab === 'pc') {
+      tsvData = tableData.map(row => {
+        const rowData = [];
+        if (copyColumnsPC.sta) rowData.push(String(row.sta || '').trim());
+        if (copyColumnsPC.itemNum) rowData.push(String(row.itemNum || '').trim());
+        rowData.push(copyColumnsPC.c ? String(row.c || '').trim() : '');
+        rowData.push(copyColumnsPC.i ? String(row.i || '').trim() : '');
+        rowData.push(copyColumnsPC.material ? String(row.material || '').trim() : '');
+        rowData.push(copyColumnsPC.textoBreve ? String(row.textoBreve || '').trim() : '');
+        rowData.push(copyColumnsPC.qtdPedido ? String(row.qtdPedido || '').trim() : '');
+        rowData.push(copyColumnsPC.um ? String(row.um || '').trim() : '');
+        rowData.push(copyColumnsPC.t ? String(row.t || '').trim() : '');
+        rowData.push(copyColumnsPC.dtRemessa ? String(row.dtRemessa || '').trim() : '');
+        rowData.push(copyColumnsPC.precoLiq ? String(row.precoLiq || '').trim() : '');
+        rowData.push(copyColumnsPC.moeda ? String(row.moeda || '').trim() : '');
+        rowData.push(copyColumnsPC.por ? String(row.por || '').trim() : '');
+        rowData.push(copyColumnsPC.unidade ? String(row.unidade || '').trim() : '');
+        rowData.push(copyColumnsPC.grpMercads ? String(row.grpMercads || '').trim() : '');
+        rowData.push(copyColumnsPC.centro ? String(row.centro || '').trim() : '');
         return rowData.join('\t');
       });
     }
@@ -515,8 +646,8 @@ export default function App() {
     }
   };
 
-  const currentColsDef = activeTab === 'sc' ? COLUMNS_SC : (activeTab === 'os' ? COLUMNS_OS : []);
-  const currentCopyColumns = activeTab === 'sc' ? copyColumnsSC : (activeTab === 'os' ? copyColumnsOS : {});
+  const currentColsDef = activeTab === 'sc' ? COLUMNS_SC : (activeTab === 'os' ? COLUMNS_OS : (activeTab === 'pc' ? COLUMNS_PC : []));
+  const currentCopyColumns = activeTab === 'sc' ? copyColumnsSC : (activeTab === 'os' ? copyColumnsOS : (activeTab === 'pc' ? copyColumnsPC : {}));
   const hasMoreToCopy = tableData.length > 0 && copiedCount < tableData.length;
   const nextBatchEnd = Math.min(copiedCount + (Number(config.loteTamanho) || 10), tableData.length);
 
@@ -540,6 +671,7 @@ export default function App() {
             {[
               { id: 'sc', label: 'Solicitação Compra', icon: ShoppingCart },
               { id: 'os', label: 'Ordem Serviço', icon: Wrench },
+              { id: 'pc', label: 'Pedido Compra', icon: FileSpreadsheet },
               { id: 'email', label: 'Formato E-mail', icon: Mail }
             ].map((tab) => (
               <button
@@ -602,27 +734,26 @@ export default function App() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase">Lote Cópia</label>
-                    <input 
-                      type="number" 
-                      name="loteTamanho" 
-                      value={config.loteTamanho} 
-                      onChange={handleConfigChange}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-bold text-slate-500 uppercase">Centro</label>
-                    <input 
-                      type="text" 
-                      name="centro" 
-                      value={config.centro} 
-                      onChange={handleConfigChange}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase">Lote Cópia</label>
+                  <input 
+                    type="number" 
+                    name="loteTamanho" 
+                    value={config.loteTamanho} 
+                    onChange={handleConfigChange}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-slate-500 uppercase">Centro</label>
+                  <input 
+                    type="text" 
+                    name="centro" 
+                    value={config.centro} 
+                    onChange={handleConfigChange}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  />
                 </div>
 
                 {activeTab === 'sc' && (
@@ -657,7 +788,7 @@ export default function App() {
               <div className="relative group">
                 <textarea 
                   className="w-full min-h-[160px] p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all resize-none"
-                  placeholder="Cole a lista de materiais aqui..."
+                  placeholder="Cole a lista de materiais aqui (Texto ou Ctrl+V para Imagem)..."
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                 />
@@ -682,7 +813,7 @@ export default function App() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-bold text-slate-700">Anexar Fotos ou PDF</p>
-                  <p className="text-xs text-slate-400">Extração automática via Visão Computacional</p>
+                  <p className="text-xs text-slate-400">Extração automática ou cole com Ctrl+V</p>
                 </div>
               </div>
 
@@ -786,7 +917,7 @@ export default function App() {
                   {activeTab === 'email' && <Mail size={20} />}
                 </div>
                 <h2 className="font-bold text-slate-800">
-                  {activeTab === 'sc' ? 'Solicitação de Compra' : activeTab === 'os' ? 'Ordem de Serviço' : 'E-mail de Cotação'}
+                  {activeTab === 'sc' ? 'Solicitação de Compra' : activeTab === 'os' ? 'Ordem de Serviço' : activeTab === 'pc' ? 'Pedido de Compra' : 'E-mail de Cotação'}
                 </h2>
                 {tableData.length > 0 && (
                   <span className="bg-slate-200 text-slate-600 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
