@@ -1,0 +1,5 @@
+{
+  "name": "SAP Smart Assistant",
+  "description": "Intelligent assistant for SAP MM and PM modules, automating purchase requests and service orders using AI.",
+  "requestFramePermissions": []
+}
